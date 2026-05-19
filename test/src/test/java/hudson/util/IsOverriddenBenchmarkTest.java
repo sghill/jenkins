@@ -24,15 +24,15 @@ class IsOverriddenBenchmarkTest {
     void runBenchmark() throws Exception {
         ChainedOptionsBuilder options = new OptionsBuilder()
                 .mode(Mode.AverageTime)
-                .forks(1)
+                .forks(3)
                 .result("jmh-report.json")
                 .resultFormat(ResultFormatType.JSON)
                 .operationsPerInvocation(1)
                 .threads(1)
                 .warmupForks(0)
-                .warmupIterations(0)
+                .warmupIterations(5)
                 .measurementBatchSize(1)
-                .measurementIterations(1)
+                .measurementIterations(10)
                 .timeUnit(TimeUnit.NANOSECONDS)
                 .shouldFailOnError(true)
                 .include(IsOverriddenBenchmark.class.getName() + ".*");
