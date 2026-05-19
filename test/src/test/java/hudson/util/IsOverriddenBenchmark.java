@@ -43,6 +43,7 @@ public class IsOverriddenBenchmark {
     static abstract class Level3Task implements Queue.Task {
         @Override public String getDisplayName() { return "task"; }
         @Override public String getName() { return "task"; }
+        @Override public String getUrl() { return ""; }
         @Override public Queue.Executable createExecutable() throws IOException { return null; }
     }
 
