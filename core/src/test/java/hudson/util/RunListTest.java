@@ -25,7 +25,6 @@
 package hudson.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -180,9 +179,9 @@ class RunListTest {
                 assertEquals(1, visited.get());
                 assertNull(inner.getCachedFirstBuild());
                 assertNull(outer.getCachedFirstBuild());
-                // Ordinary iteration has its own context, even on an interrupted thread.
-                assertFalse(outer.iterator().hasNext());
-                assertEquals(4, visited.get());
+                // Ordinary RunList traversal also observes the interrupted thread.
+                assertThrows(RunListInterruptedException.class, () -> outer.iterator().hasNext());
+                assertEquals(1, visited.get());
             } finally {
                 Thread.interrupted();
             }
@@ -205,35 +204,13 @@ class RunListTest {
     }
 
     @Test
-    void ordinaryIterationDoesNotCheckInterruption() {
+    void ordinaryIterationChecksInterruption() {
         Run run = mock(Run.class);
-        RunList<Run> runs = RunList.fromRuns(List.of(run)).filter((Predicate<Run>) candidate -> true);
-        assertEquals(1, runs.size());
+        RunList<Run> runs = RunList.fromRuns(List.of(run));
         try {
             Thread.currentThread().interrupt();
-            assertSame(run, runs.iterator().next());
+            assertThrows(RunListInterruptedException.class, () -> runs.iterator().next());
             assertTrue(Thread.currentThread().isInterrupted());
-        } finally {
-            Thread.interrupted();
-        }
-    }
-
-    @Test
-    void sizeDoesNotMakeUnrelatedIterationInterruptible() {
-        Run run = mock(Run.class);
-        RunList<Run> unrelated = RunList.fromRuns(List.of(run)).filter((Predicate<Run>) candidate -> true);
-        AtomicInteger visited = new AtomicInteger();
-        RunList<Run> runs = RunList.fromRuns(List.of(run)).filter((Predicate<Run>) candidate -> {
-            Thread.currentThread().interrupt();
-            assertSame(run, unrelated.iterator().next());
-            visited.incrementAndGet();
-            return false;
-        });
-        try {
-            assertThrows(RunListInterruptedException.class, runs::size);
-            assertEquals(1, visited.get());
-            assertTrue(Thread.currentThread().isInterrupted());
-            assertNull(runs.getCachedFirstBuild());
         } finally {
             Thread.interrupted();
         }
@@ -276,6 +253,57 @@ class RunListTest {
         try {
             assertThrows(RunListInterruptedException.class, runs::size);
             assertNull(runList.getCachedFirstBuild());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void sizeStopsInsideInheritedIteratorSubclass() {
+        AtomicInteger visited = new AtomicInteger();
+        Run run = mock(Run.class);
+        RunList<Run> inner = RunList.fromRuns(List.of(run, run, run)).filter((Predicate<Run>) candidate -> {
+            visited.incrementAndGet();
+            Thread.currentThread().interrupt();
+            return false;
+        });
+        Job job = mock(Job.class);
+        when(job.getBuilds()).thenReturn(inner);
+        RunList<Run> subclass = new RunList<>(job) {};
+        try {
+            assertThrows(RunListInterruptedException.class, subclass::size);
+            assertTrue(Thread.currentThread().isInterrupted());
+            assertEquals(1, visited.get());
+            assertNull(subclass.getCachedFirstBuild());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void sizeChecksWhileInitializingEmptyMergedRunLists() {
+        AtomicInteger iteratorRequests = new AtomicInteger();
+        RunList<Run> empty = new RunList<>() {
+            @Override
+            public Iterator<Run> iterator() {
+                if (iteratorRequests.incrementAndGet() == 1) {
+                    Thread.currentThread().interrupt();
+                }
+                return Collections.emptyIterator();
+            }
+        };
+        List<Job> jobs = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            Job job = mock(Job.class);
+            when(job.getBuilds()).thenReturn(empty);
+            jobs.add(job);
+        }
+        RunList<Run> merged = new RunList<>(jobs);
+        try {
+            assertThrows(RunListInterruptedException.class, merged::size);
+            assertTrue(Thread.currentThread().isInterrupted());
+            assertEquals(1, iteratorRequests.get());
+            assertNull(merged.getCachedFirstBuild());
         } finally {
             Thread.interrupted();
         }

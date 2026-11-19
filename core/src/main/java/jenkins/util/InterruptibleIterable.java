@@ -30,7 +30,7 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /**
  * An iterable that can check for interruption even while skipping elements inside {@link Iterator#hasNext()}.
- * The check belongs to an individual scan; ordinary iteration does not check for interruption.
+ * The check belongs to an individual scan. Callers choose whether ordinary iteration is interruptible.
  */
 @Restricted(NoExternalUse.class)
 public interface InterruptibleIterable<T> extends Iterable<T> {
@@ -47,10 +47,34 @@ public interface InterruptibleIterable<T> extends Iterable<T> {
 
     /**
      * Passes a scan's interruption check to iterables that support it.
-     * Other iterables retain their ordinary iterator behavior.
+     * Other iterables are wrapped so the check runs before and after each iterator operation.
      */
     static <T> Iterator<T> iterator(Iterable<T> source, Runnable checkInterrupted) {
-        return source instanceof InterruptibleIterable<T> interruptible
-                ? interruptible.iterator(checkInterrupted) : source.iterator();
+        if (source instanceof InterruptibleIterable<T> interruptible) {
+            return interruptible.iterator(checkInterrupted);
+        }
+        Iterator<T> iterator = source.iterator();
+        return new Iterator<>() {
+            @Override
+            public boolean hasNext() {
+                checkInterrupted.run();
+                boolean hasNext = iterator.hasNext();
+                checkInterrupted.run();
+                return hasNext;
+            }
+
+            @Override
+            public T next() {
+                checkInterrupted.run();
+                T next = iterator.next();
+                checkInterrupted.run();
+                return next;
+            }
+
+            @Override
+            public void remove() {
+                iterator.remove();
+            }
+        };
     }
 }

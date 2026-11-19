@@ -35,6 +35,7 @@ import java.util.concurrent.CancellationException;
  * is already committed, its original status is retained and its body may be truncated.
  *
  * @see RunList#size()
+ * @see RunList#iterator()
  * @since 2.591
  */
 public class RunListInterruptedException extends CancellationException {

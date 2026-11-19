@@ -30,6 +30,7 @@ import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Util;
 import hudson.model.listeners.RunListener;
+import hudson.util.RunListInterruptedException;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -264,6 +265,9 @@ public final class RunMap<R extends Run<?, R>> extends AbstractLazyLoadRunMap<R>
                     LOGGER.log(FINEST, "Loaded " + b.getFullDisplayName() + " in " + Thread.currentThread().getName(), new ThisIsHowItsLoaded());
                 }
                 return b;
+            } catch (RunListInterruptedException e) {
+                // Do not mark a build unloadable when its load was merely cancelled.
+                throw e;
             } catch (Exception | InstantiationError e) {
                 LOGGER.log(Level.WARNING, "could not load " + d, e);
             }

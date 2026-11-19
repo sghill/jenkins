@@ -121,7 +121,10 @@ public class RunList<R extends Run> extends AbstractList<R> implements AlwaysIte
 
     private static <R extends Run> Iterable<R> combine(Iterable<Iterable<R>> runLists) {
         return new Iteration<>(checkInterrupted -> Iterators.mergeSorted(
-                Iterables.transform(runLists, runs -> InterruptibleIterable.iterator(runs, checkInterrupted)),
+                Iterables.transform(runLists, runs -> {
+                    checkInterrupted.run();
+                    return InterruptibleIterable.iterator(runs, checkInterrupted);
+                }),
                 (o1, o2) -> Long.compare(o2.getTimeInMillis(), o1.getTimeInMillis())));
     }
 
@@ -129,16 +132,28 @@ public class RunList<R extends Run> extends AbstractList<R> implements AlwaysIte
         base = c;
     }
 
+    /**
+     * Returns an iterator that stops when the calling thread is interrupted.
+     *
+     * @throws RunListInterruptedException if the current thread is interrupted during traversal
+     */
     @Override
     public Iterator<R> iterator() {
-        return base.iterator();
+        return InterruptibleIterable.iterator(base, RunList::checkInterrupted);
     }
 
     @Restricted(NoExternalUse.class)
     @Override
     public Iterator<R> iterator(Runnable checkInterrupted) {
-        // Preserve custom iterator behavior. Such iterators are checked at the scan boundary.
-        return getClass() == RunList.class ? InterruptibleIterable.iterator(base, checkInterrupted) : iterator();
+        try {
+            // Preserve an actual override, but allow subclasses inheriting this iterator to propagate the check.
+            if (getClass().getMethod("iterator").getDeclaringClass() == RunList.class) {
+                return InterruptibleIterable.iterator(base, checkInterrupted);
+            }
+        } catch (NoSuchMethodException e) {
+            throw new AssertionError(e);
+        }
+        return iterator();
     }
 
     /**

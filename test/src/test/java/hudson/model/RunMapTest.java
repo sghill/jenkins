@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.common.collect.Streams;
 import hudson.model.queue.QueueTaskFuture;
+import hudson.util.RunListInterruptedException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -21,6 +22,7 @@ import java.util.TreeMap;
 import java.util.logging.Level;
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
+import jenkins.model.RunAction2;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.Issue;
@@ -112,6 +114,46 @@ class RunMapTest {
     /**
      * Testing if the lazy loading can gracefully tolerate a RuntimeException during unmarshalling.
      */
+    @Test
+    void interruptedActionLoadCanBeRetriedWithoutLosingTheAction() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
+        FreeStyleBuild build = r.buildAndAssertSuccess(p);
+        build.addAction(new InterruptingRunAction());
+        build.save();
+        int number = build.getNumber();
+        p._getRuns().purgeCache();
+
+        InterruptingRunAction.interruptOnLoadThread = Thread.currentThread();
+        try {
+            assertThrows(RunListInterruptedException.class, () -> p.getBuildByNumber(number));
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            InterruptingRunAction.interruptOnLoadThread = null;
+            Thread.interrupted();
+        }
+
+        // The cancelled resolution must not mark the reference unloadable. A later
+        // request can load the same persisted build and restore its action.
+        FreeStyleBuild reloaded = p.getBuildByNumber(number);
+        assertNotNull(reloaded);
+        assertNotNull(reloaded.getAction(InterruptingRunAction.class));
+    }
+
+    public static class InterruptingRunAction extends InvisibleAction implements RunAction2 {
+        private static volatile Thread interruptOnLoadThread;
+
+        @Override
+        public void onAttached(Run<?, ?> run) {}
+
+        @Override
+        public void onLoad(Run<?, ?> run) {
+            if (Thread.currentThread() == interruptOnLoadThread) {
+                Thread.currentThread().interrupt();
+                throw new RunListInterruptedException();
+            }
+        }
+    }
+
     @Issue("JENKINS-15533")
     @Test
     void runtimeExceptionInUnmarshalling() throws Exception {

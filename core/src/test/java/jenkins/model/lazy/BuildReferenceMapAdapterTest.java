@@ -19,6 +19,31 @@ import org.junit.jupiter.api.Test;
 class BuildReferenceMapAdapterTest {
 
     @Test
+    void iteratorStopsWhileSkippingUnloadableBuilds() {
+        NavigableMap<Integer, BuildReference<Run>> references = new TreeMap<>();
+        for (int number = 1; number <= 3; number++) {
+            references.put(number, new BuildReference<>(Integer.toString(number)));
+        }
+        AtomicInteger resolved = new AtomicInteger();
+        BuildReferenceMapAdapter.BuildReferenceResolver<Run> resolver = mock(BuildReferenceMapAdapter.BuildReferenceResolver.class);
+        when(resolver.resolveBuildRef(any())).thenAnswer(invocation -> {
+            if (resolved.incrementAndGet() == 1) {
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        });
+        BuildReferenceMapAdapter<Run> adapter = new BuildReferenceMapAdapter<>(references, resolver, mock(BuildReferenceMapAdapter.BuildTypeDescriptor.class));
+        RunList<Run> runs = RunList.fromRuns(adapter.values());
+        try {
+            assertThrows(RunListInterruptedException.class, () -> runs.iterator().hasNext());
+            assertTrue(Thread.currentThread().isInterrupted());
+            assertEquals(1, resolved.get());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
     void sizeStopsWhileSkippingUnloadableBuilds() {
         NavigableMap<Integer, BuildReference<Run>> references = new TreeMap<>();
         for (int number = 1; number <= 3; number++) {

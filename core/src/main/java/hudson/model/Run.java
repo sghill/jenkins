@@ -68,6 +68,7 @@ import hudson.tasks.Fingerprinter.FingerprintAction;
 import hudson.util.FormApply;
 import hudson.util.LogTaskListener;
 import hudson.util.ProcessTree;
+import hudson.util.RunListInterruptedException;
 import hudson.util.XStream2;
 import io.jenkins.servlet.ServletExceptionWrapper;
 import jakarta.servlet.ServletException;
@@ -384,6 +385,9 @@ public abstract class Run<JobT extends Job<JobT, RunT>, RunT extends Run<JobT, R
             if (a instanceof RunAction2) {
                 try {
                     ((RunAction2) a).onLoad(this);
+                } catch (RunListInterruptedException x) {
+                    // Cancellation is not evidence that the action is corrupt.
+                    throw x;
                 } catch (RuntimeException x) {
                     LOGGER.log(WARNING, "failed to load " + a + " from " + getDataFile(), x);
                     removeAction(a); // if possible; might be in an inconsistent state

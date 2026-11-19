@@ -73,13 +73,15 @@ class ApiTest {
     @Test
     void interruptedBuildHistory() throws Exception {
         JenkinsRule.WebClient wc = j.createWebClient().withThrowExceptionOnFailingStatusCode(false);
-        for (String range : List.of("", "{0,1}")) {
-            for (String flavor : List.of("json", "xml", "python")) {
-                WebResponse response = wc.goTo("interruptedBuildHistory/api/" + flavor + "?tree=allBuilds[number]" + range, null).getWebResponse();
-                assertEquals(503, response.getStatusCode());
-                assertEquals("text/plain", response.getContentType());
-                assertEquals("Resource-intensive request interrupted before a complete result could be produced.", response.getContentAsString());
-            }
+        for (String flavor : List.of("json", "xml", "python")) {
+            WebResponse response = wc.goTo("interruptedBuildHistory/api/" + flavor + "?tree=allBuilds[number]", null).getWebResponse();
+            assertEquals(503, response.getStatusCode());
+            assertEquals("text/plain", response.getContentType());
+            assertEquals("Resource-intensive request interrupted before a complete result could be produced.", response.getContentAsString());
+
+            WebResponse ranged = wc.goTo("interruptedBuildHistory/api/" + flavor + "?tree=allBuilds[number]{0,1}", null).getWebResponse();
+            assertEquals(200, ranged.getStatusCode());
+            assertTrue(ranged.getContentAsString().contains("number"));
         }
         assertEquals(200, wc.goTo("api/json?tree=nodeName", "application/json").getWebResponse().getStatusCode());
     }
@@ -129,12 +131,13 @@ class ApiTest {
         @Exported(name = "allBuilds")
         public RunList<Run> getBuilds() {
             AtomicInteger visited = new AtomicInteger();
-            return RunList.fromRuns(List.of(mock(Run.class), mock(Run.class))).filter((Predicate<Run>) run -> {
+            RunList<Run> builds = RunList.fromRuns(List.of(mock(Run.class), mock(Run.class))).filter((Predicate<Run>) run -> {
                 if (visited.incrementAndGet() == 2) {
                     Thread.currentThread().interrupt();
                 }
                 return true;
             });
+            return builds;
         }
     }
 
